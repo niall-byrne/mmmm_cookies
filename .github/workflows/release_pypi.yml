@@ -1,0 +1,77 @@
+---
+name: mmmm_cookies Release Wheel
+
+# Workflow Secrets:
+# SLACK_WEBHOOK              (Required, for slack notifications...)
+# PYPI_API_TOKEN             (Required, for publish to pypi...)
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+
+      - uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+
+      - name: Setup Environment
+        run: |
+          echo "WEBHOOK_URL=${WEBHOOK_URL}" >> $GITHUB_ENV
+          echo "PROJECT_NAME=mmmm_cookies" >> $GITHUB_ENV
+          echo "USERNAME=niall-byrne" >> $GITHUB_ENV
+          echo "CD_ENABLED=false" >> $GITHUB_ENV
+
+        env:
+          WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}
+
+      - name: Create Docker Mounted Content
+        run: |
+          echo | ssh-keygen
+          touch ${HOME}/.gitconfig
+          touch ${HOME}/.gitconfig_global
+
+      - name: Ensure File System is Writable by the Container
+        run: |
+          sudo chmod -R o+w .
+
+      - name: Build Container
+        run: |
+          docker-compose build
+          docker-compose up -d
+
+      # START Continuous Deployment -- Customize this Section Depending on your strategy
+
+      - name: Is CD enabled?
+        if: env.PYPI_TOKEN != ''
+        run: |
+          echo "CD_ENABLED=true" >> $GITHUB_ENV
+        env:
+          PYPI_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
+
+      - name: Build and Publish a Python Package to PyPI
+        if: env.CD_ENABLED == 'true'
+        run: |
+          docker-compose exec -T "${PROJECT_NAME}" poetry publish --build --username __token__ --password "${PYPI_API_TOKEN}"
+        env:
+          PYPI_API_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
+
+      # END Continuous Deployment -- Customize this Section Depending on your strategy
+
+      - name: Production -- Report Success
+        if: env.CD_ENABLED == 'true'
+        run: |
+          ./scripts/ci/slack.sh "${PROJECT_NAME}:${GITHUB_REF#refs/tags/}" "new release has been pushed to PyPi!"
+
+      - name: Production -- Report Success
+        if: env.CD_ENABLED != 'true'
+        run: |
+          ./scripts/ci/slack.sh "${PROJECT_NAME}:${GITHUB_REF#refs/tags/}" "new release wheel has been built, but CD is disabled for this repository!"
+
+      - name: Production -- Report Failure
+        if: failure() == true
+        run: |
+          ./scripts/ci/slack.sh "${PROJECT_NAME}:${GITHUB_REF#refs/tags/}" "automated PyPi release has failed!"
