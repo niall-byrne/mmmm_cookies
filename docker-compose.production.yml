@@ -1,0 +1,13 @@
+---
+version: "3"
+
+services:
+  mmmm_cookies:
+    build:
+      context: .
+      dockerfile: assets/Dockerfile
+      target: production
+    env_file:
+      - assets/production.env
+    volumes:
+      - ./assets:/app/assets
